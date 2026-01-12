@@ -1,0 +1,136 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Broadcaster</title>
+    <style>
+        body { font-family: 'Inter', sans-serif; background: #111; color: #eee; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        h1 { margin-bottom: 20px; }
+        video { border: 2px solid #333; border-radius: 8px; background: #000; width: 640px; height: 480px; }
+        .controls { margin-top: 20px; display: flex; gap: 10px; }
+        button { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; transition: background 0.2s; }
+        #startBtn { background: #10b981; color: #fff; }
+        #startBtn:hover { background: #059669; }
+        #stopBtn { background: #ef4444; color: #fff; }
+        #stopBtn:hover { background: #dc2626; }
+        .status { margin-top: 10px; font-size: 0.9em; color: #888; }
+        .dot { height: 10px; width: 10px; background-color: #555; border-radius: 50%; display: inline-block; margin-right: 5px; }
+        .live .dot { background-color: #ef4444; animation: blink 1s infinite; }
+        @keyframes blink { 50% { opacity: 0; } }
+    </style>
+</head>
+<body>
+
+    <h1>Broadcaster Terminal</h1>
+    
+    <div style="position: relative;">
+        <video id="webcam" autoplay playsinline muted></video>
+        <div id="statusBadge" class="status" style="position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.7); padding: 5px 10px; border-radius: 4px; display: none;">
+            <span class="dot"></span> LIVE
+        </div>
+    </div>
+
+    <div class="controls">
+        <button id="startBtn">Start Streaming</button>
+        <button id="stopBtn" disabled>Stop Streaming</button>
+    </div>
+    
+    <p id="connectionStatus">Ready to connect...</p>
+
+    <canvas id="canvas" width="640" height="480" style="display:none;"></canvas>
+
+    <script>
+        const video = document.getElementById('webcam');
+        const canvas = document.getElementById('canvas');
+        const context = canvas.getContext('2d');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const connectionStatus = document.getElementById('connectionStatus');
+        const statusBadge = document.getElementById('statusBadge');
+
+        let ws;
+        let streamInterval;
+        const FPS = 5; // Frames per second to send
+        const WS_URL = "ws://" + window.location.host + "/ws/broadcast";
+
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+                video.srcObject = stream;
+            } catch (err) {
+                console.error("Error accessing webcam:", err);
+                alert("Could not access webcam.");
+            }
+        }
+
+        function connectWebSocket() {
+            ws = new WebSocket(WS_URL);
+            
+            ws.onopen = () => {
+                connectionStatus.textContent = "Connected to server.";
+                connectionStatus.style.color = "#10b981";
+                startStreaming();
+            };
+
+            ws.onclose = () => {
+                connectionStatus.textContent = "Disconnected from server.";
+                connectionStatus.style.color = "#ef4444";
+                stopStreamingUI();
+            };
+
+            ws.onerror = (err) => {
+                console.error("WebSocket error:", err);
+                connectionStatus.textContent = "Connection error.";
+                connectionStatus.style.color = "#ef4444";
+            };
+        }
+
+        function startStreaming() {
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+            statusBadge.style.display = 'block';
+            statusBadge.classList.add('live');
+
+            streamInterval = setInterval(() => {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    canvas.toBlob((blob) => {
+                        ws.send(blob);
+                    }, 'image/jpeg', 0.6); // Quality 0.6
+                }
+            }, 1000 / FPS);
+        }
+
+        function stopStreamingUI() {
+            clearInterval(streamInterval);
+            if (ws) {
+                ws.close();
+            }
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            statusBadge.classList.remove('live');
+            statusBadge.style.display = 'none';
+        }
+
+        startBtn.onclick = () => {
+            if (!video.srcObject) {
+                // Initialize camera first if not ready
+                startCamera().then(() => connectWebSocket());
+            } else {
+                connectWebSocket();
+            }
+        };
+
+        stopBtn.onclick = () => {
+            stopStreamingUI();
+            connectionStatus.textContent = "Stopped.";
+            connectionStatus.style.color = "#888";
+        };
+
+        // Initial camera setup
+        startCamera();
+    </script>
+</body>
+</html>
