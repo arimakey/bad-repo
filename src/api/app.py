@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
@@ -53,49 +53,34 @@ def read_root():
 @app.websocket("/ws/broadcast")
 async def broadcast_endpoint(websocket: WebSocket):
     await stream_service.connect_broadcaster(websocket)
-    
-    frame_buffer = []
-    last_analysis_time = 0
-    # To avoid memory explosion, we'll sub-sample frames for storage
-    # Assuming broadcast is ~15fps or more, we probably only need 1fps for analysis context
-    # If using frame skipping logic here or in `analyze_video` (we did it in analyze_video already)
-    # Let's just collect all and let the agent subsample, or do slight subsample here
-    
-    frame_count = 0 
-    
-    import time
-    last_analysis_time = time.time()
-
     try:
         while True:
             data = await websocket.receive_bytes()
-            # Broadcast raw frame to viewers (LIVE)
-            await stream_service.broadcast_frame(data)
-            
-            # Accumulate for Analysis (every 5th frame ~ 3-5 FPS typically)
-            frame_count += 1
-            if frame_count % 5 == 0:
-                frame_buffer.append(data)
-            
-            # Check if 15s passed
-            current_time = time.time()
-            if current_time - last_analysis_time >= 15:
-                if frame_buffer:
-                    print(f"Triggering analysis for {len(frame_buffer)} frames...")
-                    # Copy buffer and clear
-                    frames_to_send = list(frame_buffer)
-                    frame_buffer.clear()
-                    last_analysis_time = current_time
-                    
-                    asyncio.create_task(run_analysis(frames_to_send))
-                else:
-                    last_analysis_time = current_time # Reset timer even if empty
+            # New centralized logic
+            await stream_service.process_frame(data, run_analysis)
             
     except WebSocketDisconnect:
         stream_service.disconnect_broadcaster()
     except Exception as e:
         print(f"Broadcaster error: {e}")
         stream_service.disconnect_broadcaster()
+
+@app.post("/api/upload_frame")
+async def upload_frame(request: Request):
+    """
+    HTTP Endpoint for ESP32 (or other devices) to push frames without WebSocket.
+    Expects raw binary body of the image (JPEG).
+    """
+    try:
+        data = await request.body()
+        if not data:
+            return {"status": "error", "message": "empty body"}
+        
+        await stream_service.process_frame(data, run_analysis)
+        return {"status": "ok"}
+    except Exception as e:
+        print(f"HTTP Upload Error: {e}")
+        return {"status": "error", "detail": str(e)}
 
 @app.websocket("/ws/viewer")
 async def viewer_endpoint(websocket: WebSocket):
