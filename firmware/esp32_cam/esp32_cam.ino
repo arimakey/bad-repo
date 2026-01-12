@@ -112,12 +112,15 @@ void loop() {
   // Headers importantes para enviar raw binary
   http.addHeader("Content-Type", "image/jpeg");
   
+  Serial.printf("Enviando %u bytes a %s\n", fb->len, server_url);
+
   // Enviar POST con el buffer de la imagen
   int httpResponseCode = http.POST(fb->buf, fb->len);
   
   if (httpResponseCode > 0) {
-    // Éxito?
-    // Serial.printf("Frame enviado: %d\n", httpResponseCode);
+    Serial.printf("POST OK, codigo: %d\n", httpResponseCode);
+    String payload = http.getString();
+    Serial.println(payload);
   } else {
     Serial.printf("Error POST: %s\n", http.errorToString(httpResponseCode).c_str());
   }

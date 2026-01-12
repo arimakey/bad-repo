@@ -331,7 +331,8 @@
         const connStatus = document.getElementById('connStatus');
         const updateTimer = document.getElementById('updateTimer');
 
-        const WS_URL = "ws://" + window.location.host + "/ws/viewer";
+        // Use remote production WebSocket URL
+        const WS_URL = "wss://bad-repo.onrender.com/ws/viewer";
 
         let ws;
 
