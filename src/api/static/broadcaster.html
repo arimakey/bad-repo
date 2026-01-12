@@ -95,6 +95,12 @@
 
     <h1>Broadcaster Terminal</h1>
 
+    <div style="margin-bottom: 20px; background: #222; padding: 10px; border-radius: 8px;">
+        <label for="videoInput" style="margin-right: 10px; font-size: 0.9em; color: #ccc;">Select Video for Simulation
+            (Optional):</label>
+        <input type="file" id="videoInput" accept="video/*" style="color: #fff;">
+    </div>
+
     <div style="position: relative;">
         <video id="webcam" autoplay playsinline muted></video>
         <div id="statusBadge" class="status"
@@ -123,26 +129,65 @@
 
         let intervalId = null;
 
+        const videoInput = document.getElementById('videoInput');
+        let useFileSource = false;
+        let fileStreamUrl = null;
+
+        videoInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                useFileSource = true;
+                if (fileStreamUrl) URL.revokeObjectURL(fileStreamUrl);
+                fileStreamUrl = URL.createObjectURL(file);
+
+                // Stop any existing webcam stream
+                if (video.srcObject) {
+                    const tracks = video.srcObject.getTracks();
+                    tracks.forEach(track => track.stop());
+                    video.srcObject = null;
+                }
+
+                video.src = fileStreamUrl;
+                video.loop = true;
+                // video.play(); // Wait for start button to play
+                connectionStatus.textContent = "Video file loaded. Press Start.";
+                connectionStatus.style.color = '#3b82f6';
+            } else {
+                useFileSource = false;
+            }
+        });
+
         // Initial camera setup and start streaming
-        startCameraAndStream();
+        // startCameraAndStream(); // Don't auto start, let user choose
 
         async function startCameraAndStream() {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
-                video.srcObject = stream;
-                startBtn.disabled = true;
-                stopBtn.disabled = false;
-                connectionStatus.textContent = 'Camera ready. Starting HTTP stream (2 FPS)...';
-                connectionStatus.style.color = '#10b981';
-                statusBadge.style.display = 'block';
-                statusBadge.classList.add('live');
+                if (useFileSource) {
+                    video.play();
+                    startBtn.disabled = true;
+                    stopBtn.disabled = false;
+                    connectionStatus.textContent = 'Simulating stream from file (2 FPS)...';
+                    connectionStatus.style.color = '#10b981';
+                    statusBadge.style.display = 'block';
+                    statusBadge.classList.add('live');
+                    startSendingFrames();
+                } else {
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+                    video.srcObject = stream;
+                    startBtn.disabled = true;
+                    stopBtn.disabled = false;
+                    connectionStatus.textContent = 'Camera ready. Starting HTTP stream (2 FPS)...';
+                    connectionStatus.style.color = '#10b981';
+                    statusBadge.style.display = 'block';
+                    statusBadge.classList.add('live');
+                    startSendingFrames();
+                }
 
-                startSendingFrames();
             } catch (err) {
-                console.error('Error accessing webcam:', err);
-                connectionStatus.textContent = 'Camera error: ' + err.message;
+                console.error('Error accessing source:', err);
+                connectionStatus.textContent = 'Source error: ' + err.message;
                 connectionStatus.style.color = '#ef4444';
-                alert("Could not access webcam.");
+                alert("Could not access webcam or file.");
             }
         }
 
@@ -195,12 +240,20 @@
 
         stopBtn.onclick = () => {
             if (intervalId) clearInterval(intervalId);
-            const stream = video.srcObject;
-            if (stream) {
-                const tracks = stream.getTracks();
-                tracks.forEach(track => track.stop());
+
+            if (useFileSource) {
+                video.pause();
+                // Optionally reset to beginning
+                // video.currentTime = 0; 
+            } else {
+                const stream = video.srcObject;
+                if (stream) {
+                    const tracks = stream.getTracks();
+                    tracks.forEach(track => track.stop());
+                }
+                video.srcObject = null;
             }
-            video.srcObject = null;
+
             startBtn.disabled = false;
             stopBtn.disabled = true;
             connectionStatus.textContent = 'Stopped.';
